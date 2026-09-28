@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bảng Thông Báo Nội Bộ</title>
+  <style>
+    * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+    body { background-color: #f4f6f8; margin: 0; padding: 20px; color: #333; }
+    .container { max-width: 750px; margin: 0 auto; }
+    .card { background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 20px; }
+    h2 { margin-top: 0; color: #0052cc; display: flex; align-items: center; justify-content: space-between; }
+    
+    .form-row { display: flex; gap: 10px; margin-bottom: 12px; }
+    input[type="text"], select, textarea { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; outline: none; }
+    input[type="text"]:focus, textarea:focus { border-color: #0052cc; }
+    
+    .textarea-container { position: relative; margin-bottom: 12px; }
+    textarea { height: 100px; resize: vertical; }
+    .btn-clear { position: absolute; top: 8px; right: 8px; background: #e4e6eb; border: none; border-radius: 50%; width: 26px; height: 26px; cursor: pointer; font-weight: bold; color: #65676b; display: flex; align-items: center; justify-content: center; }
+    .btn-clear:hover { background: #d8dadf; color: #000; }
+    
+    .btn-group { display: flex; gap: 10px; justify-content: space-between; }
+    button { cursor: pointer; font-weight: bold; border-radius: 6px; padding: 10px 18px; border: none; font-size: 14px; }
+    .btn-save { background: #0052cc; color: white; }
+    .btn-save:hover { background: #003d99; }
+    .btn-toggle { background: #e4e6eb; color: #4b5563; }
+    .btn-toggle:hover { background: #d1d5db; }
+    
+    .note-item { background: white; border-left: 4px solid #0052cc; padding: 16px; border-radius: 8px; margin-bottom: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+    .note-header { display: flex; justify-content: space-between; font-size: 12px; color: #6b7280; margin-bottom: 8px; }
+    .note-author { font-weight: bold; color: #111827; }
+    .note-tag { background: #e0e7ff; color: #3730a3; padding: 2px 8px; border-radius: 4px; font-weight: 600; }
+    .note-content { font-size: 14px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; color: #1f2937; }
+    
+    .note-actions { margin-top: 10px; display: flex; gap: 12px; justify-content: flex-end; }
+    .btn-action { background: none; border: none; padding: 0; font-size: 13px; color: #6b7280; text-decoration: underline; cursor: pointer; }
+    .btn-action:hover { color: #111827; }
+    .btn-action.delete { color: #dc2626; }
+    
+    .edit-box { display: none; margin-top: 10px; }
+    .loading { text-align: center; color: #6b7280; margin: 20px 0; }
+    
+    /* Style hỗ trợ ẩn nội dung từng ghi chú */
+    .hidden-content { display: none !important; }
+    .note-hidden-placeholder { font-style: italic; color: #9ca3af; font-size: 13px; margin-top: 4px; }
+  </style>
+
+  <!-- Firebase App SDK (Dùng thư viện Compat tương thích chạy trực tiếp trên web) -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+</head>
+<body>
+
+<div class="container">
+  <div class="card">
+    <h2>📌 Đăng Ghi Chú / Thông Báo Nội Bộ</h2>
+    
+    <div class="form-row">
+      <input type="text" id="author" placeholder="Tên người đăng (VD: Anh A - Kế toán)...">
+      <select id="category">
+        <option value="Thông báo">📢 Thông báo chung</option>
+        <option value="Khẩn cấp">🔥 Khẩn cấp</option>
+        <option value="Lịch trình">📅 Lịch trình / Tiếp khách</option>
+        <option value="Ghi chú">📝 Ghi chú nhanh</option>
+      </select>
+    </div>
+
+    <div class="textarea-container">
+      <textarea id="noteContent" placeholder="Nhập nội dung thông báo tại đây..."></textarea>
+      <button class="btn-clear" onclick="clearInput()" title="Xóa nội dung đang nhập">✕</button>
+    </div>
+
+    <div class="btn-group">
+      <button class="btn-save" onclick="saveNote()">Lưu Thông Báo</button>
+      <button class="btn-toggle" onclick="toggleList()" id="toggleBtn">Ẩn Danh Sách</button>
+    </div>
+  </div>
+
+  <div id="loading" class="loading">Đang tải dữ liệu...</div>
+  <div id="notesContainer"></div>
+</div>
+
+<script>
+  // Đoạn thông số cấu hình Firebase chính xác của bạn
+  const firebaseConfig = {
+    apiKey: "AIzaSyB8E0OTKoTF0Ks6Jr32d778fOMUNRgpFgo",
+    authDomain: "thongbaonoibo-fd6f6.firebaseapp.com",
+    databaseURL: "https://thongbaonoibo-fd6f6-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId: "thongbaonoibo-fd6f6",
+    storageBucket: "thongbaonoibo-fd6f6.firebasestorage.app",
+    messagingSenderId: "240548876830",
+    appId: "1:240548876830:web:39b0afca2f26e9cfa8540f",
+    measurementId: "G-46NPRMF6YG"
+  };
+
+  // Khởi tạo Firebase
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.database().ref('notes');
+
+  let isListVisible = true;
+
+  // Lắng nghe dữ liệu realtime từ Firebase
+  db.on('value', (snapshot) => {
+    document.getElementById('loading').style.display = 'none';
+    const container = document.getElementById('notesContainer');
+    container.innerHTML = '';
+    
+    const data = snapshot.val();
+    if (!data) {
+      container.innerHTML = '<div style="text-align:center; color:#9ca3af;">Chưa có thông báo nào.</div>';
+      return;
+    }
+
+    // Chuyển object thành mảng và đảo ngược để bài mới lên đầu
+    const notesList = Object.keys(data).map(key => ({ id: key, ...data[key] })).reverse();
+
+    notesList.forEach(note => {
+      const item = document.createElement('div');
+      item.className = 'note-item';
+      item.innerHTML = `
+        <div class="note-header">
+          <span><span class="note-author">${escapeHtml(note.author || 'Ẩn danh')}</span> • ${note.timestamp}</span>
+          <span class="note-tag">${escapeHtml(note.category)}</span>
+        </div>
+        <div class="note-content" id="content-${note.id}">${escapeHtml(note.content)}</div>
+        <div class="note-hidden-placeholder" id="placeholder-${note.id}" style="display: none;">(Nội dung đã ẩn)</div>
+        
+        <div class="edit-box" id="edit-box-${note.id}">
+          <select id="edit-cat-${note.id}" style="margin-bottom:8px;">
+            <option value="Thông báo" ${note.category==='Thông báo'?'selected':''}>📢 Thông báo chung</option>
+            <option value="Khẩn cấp" ${note.category==='Khẩn cấp'?'selected':''}>🔥 Khẩn cấp</option>
+            <option value="Lịch trình" ${note.category==='Lịch trình'?'selected':''}>📅 Lịch trình / Tiếp khách</option>
+            <option value="Ghi chú" ${note.category==='Ghi chú'?'selected':''}>📝 Ghi chú nhanh</option>
+          </select>
+          <textarea id="edit-text-${note.id}">${escapeHtml(note.content)}</textarea>
+          <div style="text-align:right; margin-top:8px;">
+            <button class="btn-save" onclick="submitEdit('${note.id}')">Lưu cập nhật</button>
+            <button class="btn-toggle" onclick="cancelEdit('${note.id}')">Hủy</button>
+          </div>
+        </div>
+
+        <div class="note-actions">
+          <button class="btn-action" id="btn-hide-${note.id}" onclick="toggleSingleNote('${note.id}')">Ẩn</button>
+          <button class="btn-action" onclick="enableEdit('${note.id}')">Sửa</button>
+          <button class="btn-action delete" onclick="deleteNote('${note.id}')">Xóa</button>
+        </div>
+      `;
+      container.appendChild(item);
+    });
+  });
+
+  // Lưu ghi chú mới
+  function saveNote() {
+    const author = document.getElementById('author').value.trim();
+    const category = document.getElementById('category').value;
+    const content = document.getElementById('noteContent').value.trim();
+
+    if (!content) {
+      alert('Vui lòng nhập nội dung ghi chú!');
+      return;
+    }
+
+    const now = new Date();
+    const timestamp = now.toLocaleDateString('vi-VN') + ' ' + now.toLocaleTimeString('vi-VN', {hour: '2-digit', minute:'2-digit'});
+
+    db.push({
+      author: author,
+      category: category,
+      content: content,
+      timestamp: timestamp
+    }).then(() => {
+      document.getElementById('noteContent').value = '';
+    });
+  }
+
+  function clearInput() {
+    document.getElementById('noteContent').value = '';
+  }
+
+  function toggleList() {
+    const container = document.getElementById('notesContainer');
+    const btn = document.getElementById('toggleBtn');
+    isListVisible = !isListVisible;
+    container.style.display = isListVisible ? 'block' : 'none';
+    btn.innerText = isListVisible ? 'Ẩn Danh Sách' : 'Hiện Danh Sách';
+  }
+
+  // Chức năng Ẩn/Hiện riêng từng ghi chú
+  function toggleSingleNote(id) {
+    const contentEl = document.getElementById(`content-${id}`);
+    const placeholderEl = document.getElementById(`placeholder-${id}`);
+    const btnEl = document.getElementById(`btn-hide-${id}`);
+    
+    if (contentEl.style.display === 'none') {
+      contentEl.style.display = 'block';
+      placeholderEl.style.display = 'none';
+      btnEl.innerText = 'Ẩn';
+    } else {
+      contentEl.style.display = 'none';
+      placeholderEl.style.display = 'block';
+      btnEl.innerText = 'Hiện';
+    }
+  }
+
+  function enableEdit(id) {
+    // Đảm bảo hiện lại nội dung nếu đang bị ẩn khi bấm sửa
+    document.getElementById(`content-${id}`).style.display = 'none';
+    document.getElementById(`placeholder-${id}`).style.display = 'none';
+    document.getElementById(`edit-box-${id}`).style.display = 'block';
+  }
+
+  function cancelEdit(id) {
+    const btnEl = document.getElementById(`btn-hide-${id}`);
+    if (btnEl.innerText === 'Hiện') {
+      document.getElementById(`placeholder-${id}`).style.display = 'block';
+    } else {
+      document.getElementById(`content-${id}`).style.display = 'block';
+    }
+    document.getElementById(`edit-box-${id}`).style.display = 'none';
+  }
+
+  function submitEdit(id) {
+    const category = document.getElementById(`edit-cat-${id}`).value;
+    const content = document.getElementById(`edit-text-${id}`).value.trim();
+    
+    const now = new Date();
+    const timestamp = now.toLocaleDateString('vi-VN') + ' ' + now.toLocaleTimeString('vi-VN', {hour: '2-digit', minute:'2-digit'}) + ' (đã sửa)';
+
+    if (!content) {
+      alert('Nội dung không được để trống!');
+      return;
+    }
+
+    db.child(id).update({
+      category: category,
+      content: content,
+      timestamp: timestamp
+    }).then(() => {
+      cancelEdit(id);
+    });
+  }
+
+  function deleteNote(id) {
+    if (confirm('Bạn có chắc chắn muốn xóa thông báo này?')) {
+      db.child(id).remove();
+    }
+  }
+
+  function escapeHtml(text) {
+    return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+  }
+</script>
+
+</body>
+</html>
